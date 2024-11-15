@@ -172,3 +172,39 @@ class MaskFormerHead(MMDET_MaskFormerHead):
         mask_pred = mask_pred_results.sigmoid()
         seg_logits = torch.einsum('bqc,bqhw->bchw', cls_score, mask_pred)
         return seg_logits
+
+    def forward_net(self, x: Tuple[Tensor]) -> Tuple[Tensor]:
+        """Test without augmentaton.
+
+        Args:
+            x (tuple[Tensor]): Multi-level features from the
+                upstream network, each is a 4D-tensor.
+            batch_img_metas (List[:obj:`SegDataSample`]): The Data
+                Samples. It usually includes information such as
+                `gt_sem_seg`.
+            test_cfg (ConfigType): Test config.
+
+        Returns:
+            Tensor: A tensor of segmentation mask.
+        """
+
+        batch_data_samples = 0
+        # Forward function of MaskFormerHead from MMDetection needs
+        # 'batch_data_samples' as inputs, which is image shape　actually.
+        all_cls_scores, all_mask_preds = self(x, batch_data_samples)
+        mask_cls_results = all_cls_scores[-1]
+        mask_pred_results = all_mask_preds[-1]
+
+        # upsample masks
+        img_shape = (1152,1152)
+        mask_pred_results = F.interpolate(
+            mask_pred_results,
+            size=img_shape,
+            mode='bilinear',
+            align_corners=False)
+
+        # semantic inference
+        cls_score = F.softmax(mask_cls_results, dim=-1)[..., :-1]
+        mask_pred = mask_pred_results.sigmoid()
+        seg_logits = torch.einsum('bqc,bqhw->bchw', cls_score, mask_pred)
+        return seg_logits
